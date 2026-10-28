@@ -155,14 +155,16 @@ def display_cve(data: Dict[str, Any]):
         render_cve_plain(data)
 
 
-def display_cve_list(cve_items: List[Dict[str, str]]):
+def display_cve_list(cve_items: List[Dict[str, str]], title_text: Optional[str] = None):
     """Hiển thị bảng danh sách các CVE hiện có."""
     if not cve_items:
-        print_warning("Hiện chưa có dữ liệu CVE nào trong thư mục data/.")
+        print_warning("Không có dữ liệu CVE nào phù hợp.")
         return
 
+    banner_title = title_text or f"DANH SÁCH CVE HIỆN CÓ ({len(cve_items)} bản ghi)"
+
     if RICH_AVAILABLE and console:
-        table = Table(title=f"DANH SÁCH CVE HIỆN CÓ ({len(cve_items)} bản ghi)", border_style="cyan", box=box.ROUNDED)
+        table = Table(title=banner_title, border_style="cyan", box=box.ROUNDED)
         table.add_column("STT", style="dim", width=6, justify="center")
         table.add_column("Mã CVE", style="bold cyan", width=18)
         table.add_column("Tiêu đề", style="white")
@@ -174,7 +176,7 @@ def display_cve_list(cve_items: List[Dict[str, str]]):
 
         console.print(table)
     else:
-        print(f"\n--- DANH SÁCH CVE HIỆN CÓ ({len(cve_items)} bản ghi) ---")
+        print(f"\n--- {banner_title} ---")
         for idx, item in enumerate(cve_items, start=1):
             title = item.get("title") or "(Không có tiêu đề)"
             print(f"{idx}. {item['cve']} | {item.get('location', '')} | {title[:50]}")
@@ -190,15 +192,13 @@ def print_main_menu():
     if RICH_AVAILABLE and console:
         content = Text()
         content.append("  [1] ", style="bold cyan")
-        content.append("Cập nhật dữ liệu\n", style="bold white")
-        content.append("  [2] ", style="bold cyan")
         content.append("Tra cứu CVE\n", style="bold white")
         content.append("  [0] ", style="bold red")
         content.append("Thoát", style="bold white")
 
         panel = Panel(
             content,
-            title="[bold yellow]★ HỆ THỐNG CRAWL & QUẢN LÝ CVE ★[/bold yellow]",
+            title="[bold yellow]★★★★★[/bold yellow]",
             subtitle="[dim]Chọn một chức năng để tiếp tục[/dim]",
             border_style="cyan",
             box=box.ROUNDED,
@@ -207,64 +207,9 @@ def print_main_menu():
         console.print(panel)
     else:
         print("\n" + "="*45)
-        print("====== HỆ THỐNG CRAWL CVE ======")
-        print("1. Cập nhật dữ liệu")
-        print("2. Tra cứu")
+        print("====== HỆ THỐNG TRA CỨU CVE ======")
+        print("1. Tra cứu CVE")
         print("0. Thoát")
-        print("="*45)
-
-
-def print_update_menu():
-    """Vẽ Menu Cập nhật dữ liệu."""
-    if RICH_AVAILABLE and console:
-        content = Text()
-        content.append("  [1] ", style="bold cyan")
-        content.append("Thủ công (Nhập mã CVE cần cào)\n", style="bold white")
-        content.append("  [0] ", style="bold red")
-        content.append("Quay lại menu chính", style="bold white")
-
-        panel = Panel(
-            content,
-            title="[bold green]► 1. CẬP NHẬT DỮ LIỆU[/bold green]",
-            subtitle="[dim]Chọn phương thức cập nhật[/dim]",
-            border_style="green",
-            box=box.ROUNDED,
-            width=50
-        )
-        console.print(panel)
-    else:
-        print("\n" + "="*45)
-        print("--- 1. CẬP NHẬT DỮ LIỆU ---")
-        print("1. Thủ công (nhập mã CVE)")
-        print("0. Quay lại menu chính")
-        print("="*45)
-
-
-def print_manual_crawl_banner():
-    """Vẽ banner chế độ Cào thủ công."""
-    if RICH_AVAILABLE and console:
-        content = Text()
-        content.append("• Nhập mã CVE: ", style="bold white")
-        content.append("CVE-2025-6115, cve-2026-99999...\n", style="cyan")
-        content.append("• Nhập ", style="dim")
-        content.append("'0'", style="bold red")
-        content.append(" hoặc ", style="dim")
-        content.append("'b'", style="bold red")
-        content.append(" để quay lại menu trước.", style="dim")
-
-        panel = Panel(
-            content,
-            title="[bold magenta]✦ THỦ CÔNG: CÀO DỮ LIỆU CVE ✦[/bold magenta]",
-            border_style="magenta",
-            box=box.ROUNDED,
-            width=55
-        )
-        console.print(panel)
-    else:
-        print("\n" + "="*45)
-        print("--- THỦ CÔNG: CÀO DỮ LIỆU CVE ---")
-        print("Nhập mã CVE (VD: CVE-2025-6115 hoặc cve-2026-99999)")
-        print("Nhập '0' hoặc 'b' để quay lại menu trước")
         print("="*45)
 
 
@@ -272,11 +217,20 @@ def print_search_menu_banner():
     """Vẽ banner chế độ Tra cứu CVE."""
     if RICH_AVAILABLE and console:
         content = Text()
-        content.append("• Nhập mã CVE: ", style="bold white")
+        content.append("• Tra cứu CVE: ", style="bold white")
         content.append("CVE-2025-6115, CVE-2021-1111...\n", style="cyan")
+        content.append("• Thêm CVE mới: ", style="bold white")
+        content.append("+Mã_CVE ", style="bold green")
+        content.append("(VD: +CVE-2025-6115 hoặc +CVE-1;CVE-2)\n", style="green")
         content.append("• Nhập ", style="dim")
         content.append("'?'", style="bold yellow")
         content.append(" để xem danh sách toàn bộ CVE hiện có.\n", style="yellow")
+        content.append("• Nhập ", style="dim")
+        content.append("'?*'", style="bold yellow")
+        content.append(" để chỉ xem CVE có tiêu đề.\n", style="yellow")
+        content.append("• Nhập ", style="dim")
+        content.append("'?-*'", style="bold yellow")
+        content.append(" để chỉ xem CVE không có tiêu đề.\n", style="yellow")
         content.append("• Nhập ", style="dim")
         content.append("'0'", style="bold red")
         content.append(" hoặc ", style="dim")
@@ -285,7 +239,7 @@ def print_search_menu_banner():
 
         panel = Panel(
             content,
-            title="[bold cyan]🔍 2. TRA CỨU DỮ LIỆU CVE CÓ SẴN[/bold cyan]",
+            title="[bold cyan]🔍 1. TRA CỨU DỮ LIỆU CVE CÓ SẴN[/bold cyan]",
             border_style="cyan",
             box=box.ROUNDED,
             width=55
@@ -293,9 +247,12 @@ def print_search_menu_banner():
         console.print(panel)
     else:
         print("\n" + "="*45)
-        print("--- 2. TRA CỨU DỮ LIỆU CVE CÓ SẴN ---")
-        print("Nhập mã CVE (VD: CVE-2025-6115, CVE-2026-99999)")
+        print("--- 1. TRA CỨU DỮ LIỆU CVE CÓ SẴN ---")
+        print("Tra cứu: Nhập mã CVE (VD: CVE-2025-6115)")
+        print("Thêm mới: Nhập +[Mã CVE] (VD: +CVE-2025-6115)")
         print("Nhập '?' để xem danh sách tất cả CVE hiện có")
+        print("Nhập '?*' để xem danh sách CVE có tiêu đề")
+        print("Nhập '?-*' để xem danh sách CVE không có tiêu đề")
         print("Nhập '0' hoặc 'b' để quay lại menu chính")
         print("="*45)
 

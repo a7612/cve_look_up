@@ -9,8 +9,6 @@ from ui import (
     display_cve,
     display_cve_list,
     print_main_menu,
-    print_update_menu,
-    print_manual_crawl_banner,
     print_search_menu_banner,
     print_success,
     print_error,
@@ -387,26 +385,6 @@ def crawl_cve(cve_id: str, data_dir: str = "data", nvd_api_key: Optional[str] = 
     return merged
 
 
-def manual_crawl_menu(data_dir: str):
-    while True:
-        print()
-        print_manual_crawl_banner()
-        user_input = input(">> Nhập CVE: ").strip()
-
-        if user_input in ("0", "b", "B", "exit", "quit"):
-            break
-
-        if not user_input:
-            print_warning("Vui lòng nhập mã CVE hợp lệ.")
-            continue
-
-        result = crawl_cve(user_input, data_dir=data_dir)
-        if result:
-            print_success(f"Thành công! Dữ liệu của {result['cve']} đã được lưu.")
-        else:
-            print_error(f"Không thể tìm thấy dữ liệu cho '{user_input}'. Vui lòng kiểm tra lại mã CVE.")
-
-
 def find_local_cve(cve_id: str, data_dir: str = "data") -> Optional[Dict[str, Any]]:
     """Tìm file dữ liệu CVE có sẵn trong thư mục data (quét cả cwe, cwe-unknown, records...)."""
     cve_id_clean = cve_id.strip()
@@ -461,18 +439,74 @@ def search_cve_menu(data_dir: str):
     while True:
         print()
         print_search_menu_banner()
-        user_input = input(">> Nhập CVE cần tra cứu: ").strip()
+        user_input = input(">> Nhập lựa chọn hoặc mã CVE: ").strip()
 
         if user_input in ("0", "b", "B", "exit", "quit"):
             break
 
         if user_input == "?":
             cves = list_local_cves(data_dir)
-            display_cve_list(cves)
+            display_cve_list(cves, title_text=f"DANH SÁCH TẤT CẢ CVE ({len(cves)} bản ghi)")
+            continue
+
+        if user_input == "?*":
+            cves = [c for c in list_local_cves(data_dir) if c.get("title") and c.get("title").strip()]
+            display_cve_list(cves, title_text=f"DANH SÁCH CVE CÓ TIÊU ĐỀ ({len(cves)} bản ghi)")
+            continue
+
+        if user_input in ("?-*", "?!"):
+            cves = [c for c in list_local_cves(data_dir) if not (c.get("title") and c.get("title").strip())]
+            display_cve_list(cves, title_text=f"DANH SÁCH CVE KHÔNG CÓ TIÊU ĐỀ ({len(cves)} bản ghi)")
             continue
 
         if not user_input:
             print_warning("Vui lòng nhập mã CVE hợp lệ.")
+            continue
+
+        # Thêm dữ liệu CVE bằng cú pháp +[CVE-ID] hoặc nhiều mã phân cách bằng ';'
+        if user_input.startswith("+"):
+            raw_cves = user_input[1:].split(";")
+            targets = []
+            for item in raw_cves:
+                cleaned = item.strip()
+                # Bỏ ngoặc vuông nếu có
+                if cleaned.startswith("[") and cleaned.endswith("]"):
+                    cleaned = cleaned[1:-1].strip()
+                # Xóa dấu '+' nếu lỡ người dùng gõ kiểu +CVE-1;+CVE-2
+                if cleaned.startswith("+"):
+                    cleaned = cleaned[1:].strip()
+                if cleaned:
+                    targets.append(cleaned)
+
+            if not targets:
+                print_warning("Vui lòng nhập ít nhất một mã CVE hợp lệ sau dấu '+'. Ví dụ: +CVE-2025-6115;CVE-2022-43089")
+                continue
+
+            success_cves = []
+            failed_cves = []
+
+            for idx, cve_target in enumerate(targets, start=1):
+                if len(targets) > 1:
+                    print_info(f"[{idx}/{len(targets)}] Đang cào dữ liệu cho {cve_target}...")
+                else:
+                    print_info(f"Đang cào dữ liệu cho {cve_target}...")
+
+                result = crawl_cve(cve_target, data_dir=data_dir)
+                if result:
+                    print_success(f"Thành công! Đã lưu {result['cve']}.")
+                    success_cves.append(result)
+                else:
+                    print_error(f"Thất bại: Không thể lấy dữ liệu cho '{cve_target}'.")
+                    failed_cves.append(cve_target)
+
+            # Nếu chỉ thêm 1 CVE thì render chi tiết, nếu nhiều thì tóm tắt và hiển thị danh sách
+            if len(targets) == 1 and success_cves:
+                display_cve(success_cves[0])
+            elif len(targets) > 1:
+                print()
+                print_info(f"Kết quả xử lý: Thành công {len(success_cves)}/{len(targets)} CVE.")
+                if failed_cves:
+                    print_warning(f"Các CVE thất bại: {', '.join(failed_cves)}")
             continue
 
         cve_data = find_local_cve(user_input, data_dir=data_dir)
@@ -480,21 +514,7 @@ def search_cve_menu(data_dir: str):
             display_cve(cve_data)
         else:
             print_error(f"Không tìm thấy dữ liệu có sẵn cho '{user_input}' trong thư mục data/.")
-            print_info("Gợi ý: Nhập '?' để xem danh sách hoặc dùng chức năng 1 để cập nhật.")
-
-
-def update_data_menu(data_dir: str):
-    while True:
-        print()
-        print_update_menu()
-        choice = input(">> Chọn chức năng: ").strip()
-
-        if choice == "1":
-            manual_crawl_menu(data_dir)
-        elif choice == "0":
-            break
-        else:
-            print_warning("Lựa chọn không hợp lệ. Vui lòng chọn lại.")
+            print_info(f"Gợi ý: Nhập '+{user_input}' để tải về từ internet hoặc '?' để xem danh sách.")
 
 
 def main_menu():
@@ -507,9 +527,7 @@ def main_menu():
         choice = input(">> Chọn chức năng: ").strip()
 
         if choice == "1":
-            update_data_menu(data_dir)
-        elif choice == "2":
-            search_cve_menu(data_dir)
+            search_cve_menu(data_dir)            
         elif choice == "0":
             print_info("Tạm biệt!")
             sys.exit(0)
