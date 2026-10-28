@@ -1,6 +1,6 @@
 .venv
 data
-__pycache_
+__pycache__
 
 *.md
 s???.txt
