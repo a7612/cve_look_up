@@ -1,6 +1,7 @@
 .venv
-data
 __pycache__
+.gitignore
 
 *.md
-s???.txt
+s*.txt
+e*.json
