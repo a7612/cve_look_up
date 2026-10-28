@@ -1,0 +1,6 @@
+.venv
+data
+__pycache_
+
+*.md
+s???.txt
