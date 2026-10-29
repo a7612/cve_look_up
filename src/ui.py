@@ -155,31 +155,106 @@ def display_cve(data: Dict[str, Any]):
         render_cve_plain(data)
 
 
-def display_cve_list(cve_items: List[Dict[str, str]], title_text: Optional[str] = None):
-    """Hiển thị bảng danh sách các CVE hiện có."""
+def display_cve_list(
+    cve_items: List[Dict[str, Any]],
+    title_text: Optional[str] = None,
+    cwe_catalog: Optional[Dict[str, str]] = None
+):
+    """Hiển thị bảng danh sách các CVE và bảng thống kê CWE được đề cập."""
     if not cve_items:
         print_warning("Không có dữ liệu CVE nào phù hợp.")
         return
 
     banner_title = title_text or f"DANH SÁCH CVE HIỆN CÓ ({len(cve_items)} bản ghi)"
 
+    # Tải cwe_catalog nếu không truyền vào
+    if cwe_catalog is None:
+        try:
+            import json, os
+            base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            cat_path = os.path.join(base_dir, "data", "cwe_catalog.json")
+            if os.path.exists(cat_path):
+                with open(cat_path, "r", encoding="utf-8") as f:
+                    cwe_catalog = json.load(f)
+            else:
+                cwe_catalog = {}
+        except Exception:
+            cwe_catalog = {}
+
+    # Gom các CWE được đề cập trong danh sách CVE này
+    cwe_map = {}
+    for item in cve_items:
+        for c in item.get("cwe") or []:
+            cwe_id = (c.get("id") or "").strip().upper()
+            if not cwe_id or cwe_id == "N/A":
+                continue
+
+            # Chuẩn hóa key CWE (ví dụ: CWE-20, NVD-CWE-OTHER...)
+            if not cwe_id.startswith("CWE-") and cwe_id.isdigit():
+                cwe_id = f"CWE-{cwe_id}"
+
+            # Ưu tiên lấy tên chuẩn từ cwe_catalog.json
+            name = (cwe_catalog or {}).get(cwe_id)
+            if not name:
+                raw_name = (c.get("name") or "").strip()
+                # Làm sạch tiền tố mã CWE nếu có trong raw_name
+                clean_name = re.sub(r"^CWE-\d+\s*[:-]?\s*", "", raw_name, flags=re.IGNORECASE).strip()
+                name = clean_name or "Chưa rõ tên"
+
+            if cwe_id not in cwe_map:
+                cwe_map[cwe_id] = name
+
+    # Sắp xếp CWE theo số hiệu CWE
+    def cwe_sort_key(cwe_id_str: str):
+        nums = re.findall(r"\d+", cwe_id_str)
+        return int(nums[0]) if nums else 999999
+
+    sorted_cwes = sorted(cwe_map.items(), key=lambda x: cwe_sort_key(x[0]))
+
     if RICH_AVAILABLE and console:
-        table = Table(title=banner_title, border_style="cyan", box=box.ROUNDED)
-        table.add_column("STT", style="dim", width=6, justify="center")
-        table.add_column("Mã CVE", style="bold cyan", width=18)
-        table.add_column("Tiêu đề", style="white")
-        table.add_column("Vị trí / Thư mục", style="green", width=25)
+        # Bảng 1: Danh sách CVE
+        table_cve = Table(title=banner_title, border_style="cyan", box=box.ROUNDED, expand=True)
+        table_cve.add_column("STT", style="dim", width=4, justify="center")
+        table_cve.add_column("Mã CVE", style="bold cyan", width=15)
+        table_cve.add_column("Tiêu đề", style="white")
+        table_cve.add_column("Vị trí / Thư mục", style="green", width=18)
 
         for idx, item in enumerate(cve_items, start=1):
             title = item.get("title") or "(Không có tiêu đề)"
-            table.add_row(str(idx), item["cve"], title, item.get("location", ""))
+            table_cve.add_row(str(idx), item["cve"], title, item.get("location", ""))
 
-        console.print(table)
+        # Bảng 2: CWE được đề cập
+        table_cwe = Table(
+            title=f"CWE ĐƯỢC ĐỀ CẬP ({len(sorted_cwes)})",
+            border_style="yellow",
+            box=box.ROUNDED,
+            expand=True
+        )
+        table_cwe.add_column("Mã CWE", style="bold yellow", width=10)
+        table_cwe.add_column("Tên CWE", style="white")
+
+        if sorted_cwes:
+            for cwe_id, cwe_name in sorted_cwes:
+                table_cwe.add_row(cwe_id, cwe_name)
+        else:
+            table_cwe.add_row("-", "(Không có CWE nào)")
+
+        # Đặt 2 bảng cạnh nhau (cột tỉ lệ: 55% cho CVE, 45% cho CWE giúp Tên CWE rộng rãi, không bị co dòng)
+        layout_grid = Table.grid(expand=True)
+        layout_grid.add_column(ratio=55)
+        layout_grid.add_column(ratio=45)
+        layout_grid.add_row(table_cve, table_cwe)
+
+        console.print(layout_grid)
     else:
         print(f"\n--- {banner_title} ---")
         for idx, item in enumerate(cve_items, start=1):
             title = item.get("title") or "(Không có tiêu đề)"
-            print(f"{idx}. {item['cve']} | {item.get('location', '')} | {title[:50]}")
+            print(f"{idx}. {item['cve']} | {item.get('location', '')} | {title[:45]}")
+
+        print(f"\n--- CWE ĐƯỢC ĐỀ CẬP ({len(sorted_cwes)}) ---")
+        for cwe_id, cwe_name in sorted_cwes:
+            print(f"{cwe_id}: {cwe_name}")
         print("-" * 50)
 
 
@@ -193,6 +268,8 @@ def print_main_menu():
         content = Text()
         content.append("  [1] ", style="bold cyan")
         content.append("Tra cứu CVE\n", style="bold white")
+        content.append(" [00] ", style="bold yellow")
+        content.append("Cài đặt (Settings)\n", style="bold white")
         content.append("  [0] ", style="bold red")
         content.append("Thoát", style="bold white")
 
@@ -209,52 +286,100 @@ def print_main_menu():
         print("\n" + "="*45)
         print("====== HỆ THỐNG TRA CỨU CVE ======")
         print("1. Tra cứu CVE")
+        print("00. Cài đặt (Settings)")
         print("0. Thoát")
         print("="*45)
 
 
-def print_search_menu_banner():
-    """Vẽ banner chế độ Tra cứu CVE."""
+def print_settings_banner(settings: Dict[str, Any]):
+    """Vẽ giao diện cài đặt settings."""
     if RICH_AVAILABLE and console:
         content = Text()
-        content.append("• Tra cứu CVE: ", style="bold white")
-        content.append("CVE-2025-6115, CVE-2021-1111...\n", style="cyan")
-        content.append("• Thêm CVE mới: ", style="bold white")
-        content.append("+Mã_CVE ", style="bold green")
-        content.append("(VD: +CVE-2025-6115 hoặc +CVE-1;CVE-2)\n", style="green")
+        content.append("CẤU HÌNH HIỆN TẠI:\n", style="bold cyan")
+        content.append("  [1] Giới hạn cào mỗi lần (crawl_max_per_one) : ", style="bold white")
+        content.append(f"{settings.get('crawl_max_per_one', 500)}\n", style="bold green")
+        content.append("  [2] Số luồng cào song song (crawl_threads)    : ", style="bold white")
+        content.append(f"{settings.get('crawl_threads', 1)}\n\n", style="bold green")
+        content.append("• Nhập số ", style="dim")
+        content.append("[1]", style="bold yellow")
+        content.append(" hoặc ", style="dim")
+        content.append("[2]", style="bold yellow")
+        content.append(" để đổi giá trị tương ứng.\n", style="dim")
         content.append("• Nhập ", style="dim")
-        content.append("'?'", style="bold yellow")
-        content.append(" để xem danh sách toàn bộ CVE hiện có.\n", style="yellow")
-        content.append("• Nhập ", style="dim")
-        content.append("'?*'", style="bold yellow")
-        content.append(" để chỉ xem CVE có tiêu đề.\n", style="yellow")
-        content.append("• Nhập ", style="dim")
-        content.append("'?-*'", style="bold yellow")
-        content.append(" để chỉ xem CVE không có tiêu đề.\n", style="yellow")
-        content.append("• Nhập ", style="dim")
+        content.append("[0]", style="bold red")
+        content.append(" hoặc ", style="dim")
+        content.append("'b'", style="bold red")
+        content.append(" để lưu và quay lại Menu chính.", style="dim")
+
+        panel = Panel(
+            content,
+            title="[bold yellow]⚙️ CÀI ĐẶT HỆ THỐNG (SETTINGS)[/bold yellow]",
+            border_style="yellow",
+            box=box.ROUNDED,
+            width=65
+        )
+        console.print(panel)
+    else:
+        print("\n" + "="*50)
+        print("--- ⚙️ CÀI ĐẶT HỆ THỐNG (SETTINGS) ---")
+        print(f"1. Giới hạn cào mỗi lần (crawl_max_per_one): {settings.get('crawl_max_per_one', 500)}")
+        print(f"2. Số luồng song song (crawl_threads): {settings.get('crawl_threads', 1)}")
+        print("Nhập 1 hoặc 2 để thay đổi. Nhập 0 hoặc b để quay lại.")
+        print("="*50)
+
+
+def print_search_menu_banner():
+    """Vẽ banner chế độ Tra cứu CVE."""
+    "Tôi tự chỉnh rồi nha, cứ như thế mà áp dụng"
+    if RICH_AVAILABLE and console:
+        content = Text()
+        content.append("HƯỚNG DẪN:\n", style="cyan")
+
+        content.append("• Tra cứu CVE: ", style="cyan")
+        content.append("[Mã CVE]\n", style="cyan")
+        content.append("\t• VD: CVE-2025-6115; CVE-2021-1111,...\n", style="dim")
+
+        content.append("• Thêm CVE: ", style="cyan")
+        content.append("+[Mã_CVE] hoặc +?[Từ_khóa]\n", style="bold green")
+        content.append("\t• VD: +CVE-2025-6115; +CVE-2025-6115;CVE-2021-1111; +CVE-2025-6511->CVE-2025-6523; +?pillow\n", style="dim")
+
+        content.append("• Danh sách:\n", style="cyan")
+
+        content.append("• ?: ", style="bold yellow")
+        content.append("Hiển thị tất cả các bản ghi\n", style="white")
+
+        content.append("• ?*: ", style="bold yellow")
+        content.append("Hiển thị tất cả các bản ghi có tiêu đề\n", style="white")
+
+        content.append("• ?-*: ", style="bold yellow")
+        content.append("Hiển thị tất cả các bản ghi không có tiêu đề\n", style="white")
+        
+        content.append("• ?keyword ", style="bold yellow")
+        content.append("Hiển thị tất cả các bản ghi với các tiêu đề cùng với từ khóa\n", style="white")
+        content.append("\t• VD: ?Pillow, ?Adobe...\n", style="dim")
+
+        content.append("• Quay lại: ", style="bold white")
         content.append("'0'", style="bold red")
         content.append(" hoặc ", style="dim")
         content.append("'b'", style="bold red")
-        content.append(" để quay lại menu chính.", style="dim")
 
         panel = Panel(
             content,
             title="[bold cyan]🔍 1. TRA CỨU DỮ LIỆU CVE CÓ SẴN[/bold cyan]",
             border_style="cyan",
             box=box.ROUNDED,
-            width=55
+            width=100
         )
         console.print(panel)
     else:
-        print("\n" + "="*45)
+        print("\n" + "="*50)
         print("--- 1. TRA CỨU DỮ LIỆU CVE CÓ SẴN ---")
-        print("Tra cứu: Nhập mã CVE (VD: CVE-2025-6115)")
-        print("Thêm mới: Nhập +[Mã CVE] (VD: +CVE-2025-6115)")
-        print("Nhập '?' để xem danh sách tất cả CVE hiện có")
-        print("Nhập '?*' để xem danh sách CVE có tiêu đề")
-        print("Nhập '?-*' để xem danh sách CVE không có tiêu đề")
-        print("Nhập '0' hoặc 'b' để quay lại menu chính")
-        print("="*45)
+        print("• Tra cứu: Nhập mã CVE (VD: CVE-2025-6115)")
+        print("• Thêm mới: +Mã_CVE (VD: +CVE-2025-6115 hoặc +CVE-1;CVE-2)")
+        print("• Danh sách: '?' (Tất cả) | '?*' (Có tiêu đề) | '?-*' (Không tiêu đề)")
+        print("• Tìm kiếm: '?Từ_khóa' (VD: ?Pillow)")
+        print("• Quay lại: '0' hoặc 'b'")
+        print("="*50)
 
 
 def print_success(msg: str):

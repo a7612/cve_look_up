@@ -1,0 +1,4 @@
+{
+  "crawl_max_per_one": 500,
+  "crawl_threads": 1
+}
